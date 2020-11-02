@@ -1,0 +1,4 @@
+satenv/
+credentials/
+*.csv
+*.xlsx

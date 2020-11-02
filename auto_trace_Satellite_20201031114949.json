@@ -1,0 +1,42 @@
+[
+    {
+        "timestamp": "2020-10-31 11:49:49.926988",
+        "created_by": "SATELLITE",
+        "text": "Started job",
+        "elapsed_time": "0.00087",
+        "execution_date": "2020-10-31 11:49:49.919611",
+        "schedule": "5min",
+        "included_schedules": "['5min']",
+        "previous_successful_execution": "None",
+        "is_checkpoint_driven": "True",
+        "schedule_start": "None:None",
+        "backtrack_days": "checkpoint",
+        "next_future_execution": "2020-10-31 11:54:49.919611",
+        "backtrack_info": "The backtrack setting for this execution is \"checkpoint\". This means that only data inserted since the last checkpoint will be will be processed. If you need to  retrieve historical data, set the  backtrack property on the schedule or set the entity_type constant  default_backtrack to None to retrieve all data",
+        "checkpoint_info": "No previous checkpoint. All data will be retrieved",
+        "cumulative_usage": "0"
+    },
+    {
+        "timestamp": "2020-10-31 11:49:49.940441",
+        "created_by": "SatelliteXTorquerModel",
+        "text": "Skipped due to dependency issue",
+        "elapsed_time": "0.013453",
+        "exception_type": "StageException",
+        "exception": "Skipped due to dependency issue",
+        "stack_trace": "NoneType: None\n",
+        "raise_error": "False",
+        "skipped_items": "['http_preload_done']",
+        "required_inputs": "{'xtorquer_voltage', 'xtorquer_current', 'xtorquer_power'}",
+        "cumulative_usage": "0"
+    },
+    {
+        "timestamp": "2020-10-31 11:49:49.944088",
+        "created_by": "SATELLITE",
+        "text": "Execution aborted",
+        "elapsed_time": "0.003647",
+        "status": "aborted",
+        "next_future_execution": "2020-10-31 11:54:49.919611",
+        "execution_date": "2020-10-31 11:49:49.919611",
+        "cumulative_usage": "0"
+    }
+]
