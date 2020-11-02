@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 # This URL must be accessible via pip install
 PACKAGE_URL = 'git+https://github.com/Marco1402/Satellite_AnomalyDetection'
 
-class SatelliteXTorquerModelv4(BaseTransformer):
+class SatXTorquerModelv4(BaseTransformer):
     # _allow_empty_df = True  # allow this task to run even if it receives no incoming data
     # produces_output_items = False  # this task does not contribute new data items
     # requires_input_items = True  # this task does not require dependent data items
@@ -184,7 +184,7 @@ class SatelliteXTorquerModelv4(BaseTransformer):
         outputs = []
         return (inputs,outputs)
 
-class SatelliteYTorquerModelv4(BaseTransformer):
+class SatYTorquerModelv4(BaseTransformer):
     # _allow_empty_df = True  # allow this task to run even if it receives no incoming data
     # produces_output_items = False  # this task does not contribute new data items
     # requires_input_items = True  # this task does not require dependent data items
