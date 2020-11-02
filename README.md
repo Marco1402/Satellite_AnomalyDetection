@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Satellite_AnomalyDetection
 =======
 # Detect anomalies in data streamed to "Maximo Asset Monitor"
