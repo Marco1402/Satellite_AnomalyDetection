@@ -53,11 +53,11 @@ class TorquerAnomaly(BaseTransformer):
         df = df.copy()
 
         input_values = []
-        if "anomalycheck" not in df.columns:
+        if ("anomalycheck_" + self.output_item) not in df.columns:
             NaN = np.nan
-            df['anomalycheck'] = NaN
+            df['anomalycheck_' + self.output_item] = NaN
         for index, row in df.iterrows():
-            if pd.isnull(row["anomalycheck"]):
+            if pd.isnull(row['anomalycheck_' + self.output_item]):
                 score_values = ([row[self.input_items[0]], row[self.input_items[1]], row[self.input_items[2]]])
                 input_values.append(score_values)
             else:
@@ -67,12 +67,10 @@ class TorquerAnomaly(BaseTransformer):
 
         df[self.output_item] = np.nan
         for index, row in df.iterrows():
-            if pd.isnull(row["anomalycheck"]):
+            if pd.isnull(row['anomalycheck_' + self.output_item]):
                 df[self.output_item][index] = results["predictions"][0]["values"][0][0]
                 results["predictions"][0]["values"].pop(0)
-                df["anomalycheck"][index] = True
-        #df[self.output_item] = df[self.output_item].astype(np.int64)
-        #df.astype('int64')
+                df['anomalycheck_' + self.output_item][index] = True
 
         return df
 
