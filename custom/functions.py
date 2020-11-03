@@ -15,6 +15,7 @@ from iotfunctions import ui
 from iotfunctions.db import Database
 from iotfunctions import bif
 import datetime
+from sqlalchemy.util.langhelpers import ellipses_string
 import urllib3
 import xml.etree.ElementTree as ET
 
@@ -25,118 +26,53 @@ logger = logging.getLogger(__name__)
 # This URL must be accessible via pip install
 PACKAGE_URL = 'git+https://github.com/Marco1402/Satellite_AnomalyDetection'
 
-class SatXTorquerModelv4(BaseTransformer):
-    # _allow_empty_df = True  # allow this task to run even if it receives no incoming data
-    # produces_output_items = False  # this task does not contribute new data items
-    # requires_input_items = True  # this task does not require dependent data items
-
-    def __init__(self, wml_endpoint, deployment_id, apikey, input_items, output_items = 'http_preload_done'):
-        logging.debug("Initializing")
-        super().__init__()
+class TorquerAnomaly(BaseTransformer):
+    
+    def __init__(self, wml_endpoint, deployment_id, apikey, input_items, output_item):
         self.input_items = input_items
-        self.output_items = output_items
-        self._output_list = [output_items]
         input_items.sort()
-        logging.debug('sorted input_items %s' , input_items)
-        self.input_columns = input_items #.replace(' ', '').split(',')
+        self.output_item = output_item
         self.wml_endpoint = wml_endpoint
-        # auth as documented here https://dataplatform.cloud.ibm.com/docs/content/wsj/analyze-data/ml-authentication.html
-        self.uid = "bx"
-        self.password = "bx"
         self.deployment_id = deployment_id
         self.apikey = apikey
+        super().__init__()
 
-    def invoke_model(self, df, wml_endpoint, uid, password, deployment_id, apikey, input_columns=[]):
-        # Taken from https://github.ibm.com/Shuxin-Lin/anomaly-detection/blob/master/Invoke-WML-Scoring.ipynb
-        # Get an IAM token from IBM Cloud
-        logging.debug("Posting enitity data to WML model")
-        url     = "https://iam.bluemix.net/oidc/token"
-        headers = { "Content-Type" : "application/x-www-form-urlencoded" }
-        data    = "apikey=" + apikey + "&grant_type=urn:ibm:params:oauth:grant-type:apikey"
-        response  = requests.post( url, headers=headers, data=data, auth=( uid, password ) )
-        if 200 != response.status_code:
-            logging.error('error getting IAM token')
-            logging.error( response.status_code )
-            logging.error( response.reason )
-            return []
-        else:
-            logging.debug('token successfully generated')
-            iam_token = response.json()["access_token"]
-            # Send data to deployed model for processing
-            headers = { "Content-Type" : "application/json",
-                        "Authorization" : "Bearer " + iam_token }
-            logging.debug("posting to WML")
-            if (len(input_columns) == 1):
-                logging.debug("filtering columns")
-                logging.debug(self.input_columns)
-                s_df = df[input_columns]
-                rows = [list(r) for i,r in s_df.iterrows()]
-                # rows = [[i] for r,i in df['deviceid'].iteritems() ]
-                payload = {"values": rows}
-                logging.debug("payload")
-                logging.debug(payload)
-            elif (len(input_columns) > 1):
-                s_df = df[input_columns]
-                rows = [list(r) for i,r in s_df.iterrows()]
-                payload = {"values": rows}
-            else:
-                logging.debug("no input columns provided, forwarding all")
-                s_df = df
+    def invoke_model(self, wml_endpoint, deployment_id, apikey, input_columns, input_values):
 
-            wml_model_endpoint = '%s/v4/deployments/%s/predictions?version=2020-10-31' %(wml_endpoint, deployment_id)
-            r = requests.post( wml_model_endpoint, json=payload, headers=headers )
-            # should return json containing same number of predictions
-            logging.debug('model response code: ' + str(r.status_code) )
-            if r.status_code == 200:
-                logging.debug('model response')
-                logging.debug(r.text)
-                j = r.json()
-                logging.debug('json')
-                logging.debug(j)
-                return j
-            else:
-                logging.error('error invoking model')
-                logging.error(r.status_code)
-                logging.error(r.text)
-                return None
+        API_KEY = apikey
+        token_response = requests.post('https://iam.ng.bluemix.net/identity/token', data={"apikey": API_KEY, "grant_type": 'urn:ibm:params:oauth:grant-type:apikey'})
+        mltoken = token_response.json()["access_token"]
 
-    def execute(self, df): # , force_overwrite=True, start_ts = None,end_ts=None):
-        # TODO, set time range if not provided. Grab all rows within x hours
-        logging.debug('in execution method')
-        logging.debug('df.columns %s', df.columns)
-        logging.debug('self.input_items %s', self.input_items)
-        logging.debug('self.output_items %s', self.output_items)
-        logging.debug('processing %s rows', len(df))
+        payload_scoring = {"input_data": [{"fields": input_columns, "values": input_values}]}
+
+        response_scoring = requests.post(f'{wml_endpoint}/ml/v4/deployments/{deployment_id}/predictions?version=2020-10-31', json=payload_scoring, headers={'Content-Type': 'application/json', 'Authorization': 'Bearer ' + mltoken})
+
+        return response_scoring.json()
+
+    def execute(self, df):
         df = df.copy()
+        
+        input_values = []
+        if "anomalycheck" not in df.columns:
+            NaN = np.nan
+            df['anomalycheck'] = NaN
+        for index, row in df.iterrows():
+            if pd.isnull(row["anomalycheck"]):
+                score_values = ([row[self.input_items[0]], row[self.input_items[1]], row[self.input_items[2]]])
+                input_values.append(score_values)
+            else:
+                continue
+    
+        results = self.invoke_model(self.wml_endpoint, self.deployment_id, self.apikey, self.input_items, input_values)
 
-        window_size = 100
+        df[self.output_item] = ""
+        for index, row in df.iterrows():
+            if pd.isnull(row["anomalycheck"]):
+                df[self.output_item][index] = results["predictions"][0]["values"][0][0]
+                results["predictions"][0]["values"].pop(0)
+                df["anomalycheck"][index] = True
 
-        # unscored_rows_idx = df.loc[df['anomaly_score'] == 0, :].index
-        # unscored_rows = df.iloc[unscored_rows_idx]
-        # TODO, add logic to only send rows that don't have any score yet
-        # results = self.invoke_model(unscored_rows, self.wml_endpoint, self.uid, self.password, self.instance_id, self.deployment_id, self.apikey, self.input_items)
-
-        results = self.invoke_model(df, self.wml_endpoint, self.uid, self.password, self.deployment_id, self.apikey, self.input_items)
-        # results = np.ones(len(df))
-
-        logging.debug('setting to 0' )
-        df[self.output_items] = 0
-        if results:
-            logging.debug('results received' )
-            # df.loc[:, self.output_items] = results['values']
-            # df[self.output_items] = results['values']
-            df[self.output_items] = [i[0] for i in results['values'] ]
-        else:
-            logging.error('error invoking external model')
-        logging.debug(df[self.output_items].dtype.name)
         return df
-
-        # logging.debug("exiting after model invoked")
-        # return True
-        # df = pd.DataFrame(data=table_data) # TODO, shouldn't have to query table, df generally holds the
-        # num_rows = len(df)
-
-
 
 
     @classmethod
@@ -150,13 +86,6 @@ class SatXTorquerModelv4(BaseTransformer):
                     # output_item = 'output_item',
                     is_output_datatype_derived = True)
                 )
-        # inputs.append(ui.UISingle(name='input_columns',
-        #                       datatype=str,
-        #                       description='Features to load from entity rows. Provide as list of comma seperated values like so - torque,speed,pressure',
-        #                       tags=['TEXT'],
-        #                       required=True
-        #                       ))
-
         inputs.append(ui.UISingle(name='wml_endpoint',
                               datatype=str,
                               description='Endpoint to WML service where model is hosted',
@@ -175,170 +104,7 @@ class SatXTorquerModelv4(BaseTransformer):
                               tags=['TEXT'],
                               required=True
                               ))
-        # define arguments that behave as function outputs
+
         outputs=[]
-        outputs.append(ui.UISingle(name='output_items', datatype=float))
+        outputs.append(ui.UISingle(name='output_item', datatype=int))
         return (inputs, outputs)
-
-
-        outputs = []
-        return (inputs,outputs)
-
-class SatYTorquerModelv4(BaseTransformer):
-    # _allow_empty_df = True  # allow this task to run even if it receives no incoming data
-    # produces_output_items = False  # this task does not contribute new data items
-    # requires_input_items = True  # this task does not require dependent data items
-
-    def __init__(self, wml_endpoint, deployment_id, apikey, input_items, output_items = 'http_preload_done'):
-        logging.debug("Initializing")
-        super().__init__()
-        self.input_items = input_items
-        self.output_items = output_items
-        self._output_list = [output_items]
-        input_items.sort()
-        logging.debug('sorted input_items %s' , input_items)
-        self.input_columns = input_items #.replace(' ', '').split(',')
-        self.wml_endpoint = wml_endpoint
-        # auth as documented here https://dataplatform.cloud.ibm.com/docs/content/wsj/analyze-data/ml-authentication.html
-        self.uid = "bx"
-        self.password = "bx"
-        self.deployment_id = deployment_id
-        self.apikey = apikey
-
-    def invoke_model(self, df, wml_endpoint, uid, password, deployment_id, apikey, input_columns=[]):
-        # Taken from https://github.ibm.com/Shuxin-Lin/anomaly-detection/blob/master/Invoke-WML-Scoring.ipynb
-        # Get an IAM token from IBM Cloud
-        logging.debug("Posting enitity data to WML model")
-        url     = "https://iam.bluemix.net/oidc/token"
-        headers = { "Content-Type" : "application/x-www-form-urlencoded" }
-        data    = "apikey=" + apikey + "&grant_type=urn:ibm:params:oauth:grant-type:apikey"
-        response  = requests.post( url, headers=headers, data=data, auth=( uid, password ) )
-        if 200 != response.status_code:
-            logging.error('error getting IAM token')
-            logging.error( response.status_code )
-            logging.error( response.reason )
-            return []
-        else:
-            logging.debug('token successfully generated')
-            iam_token = response.json()["access_token"]
-            # Send data to deployed model for processing
-            headers = { "Content-Type" : "application/json",
-                        "Authorization" : "Bearer " + iam_token}
-            logging.debug("posting to WML")
-            if (len(input_columns) == 1):
-                logging.debug("filtering columns")
-                logging.debug(self.input_columns)
-                s_df = df[input_columns]
-                rows = [list(r) for i,r in s_df.iterrows()]
-                # rows = [[i] for r,i in df['deviceid'].iteritems() ]
-                payload = {"values": rows}
-                logging.debug("payload")
-                logging.debug(payload)
-            elif (len(input_columns) > 1):
-                s_df = df[input_columns]
-                rows = [list(r) for i,r in s_df.iterrows()]
-                payload = {"values": rows}
-            else:
-                logging.debug("no input columns provided, forwarding all")
-                s_df = df
-
-            wml_model_endpoint = '%s/v4/deployments/%s/predictions?version=2020-10-31' %(wml_endpoint, deployment_id)
-            r = requests.post( wml_model_endpoint, json=payload, headers=headers )
-            # should return json containing same number of predictions
-            logging.debug('model response code: ' + str(r.status_code) )
-            if r.status_code == 200:
-                logging.debug('model response')
-                logging.debug(r.text)
-                j = r.json()
-                logging.debug('json')
-                logging.debug(j)
-                return j
-            else:
-                logging.error('error invoking model')
-                logging.error(r.status_code)
-                logging.error(r.text)
-                return None
-
-    def execute(self, df): # , force_overwrite=True, start_ts = None,end_ts=None):
-        # TODO, set time range if not provided. Grab all rows within x hours
-        logging.debug('in execution method')
-        logging.debug('df.columns %s', df.columns)
-        logging.debug('self.input_items %s', self.input_items)
-        logging.debug('self.output_items %s', self.output_items)
-        logging.debug('processing %s rows', len(df))
-        df = df.copy()
-
-        window_size = 100
-
-        # unscored_rows_idx = df.loc[df['anomaly_score'] == 0, :].index
-        # unscored_rows = df.iloc[unscored_rows_idx]
-        # TODO, add logic to only send rows that don't have any score yet
-        # results = self.invoke_model(unscored_rows, self.wml_endpoint, self.uid, self.password, self.instance_id, self.deployment_id, self.apikey, self.input_items)
-
-        results = self.invoke_model(df, self.wml_endpoint, self.uid, self.password, self.deployment_id, self.apikey, self.input_items)
-        # results = np.ones(len(df))
-
-        logging.debug('setting to 0' )
-        df[self.output_items] = 0
-        if results:
-            logging.debug('results received' )
-            # df.loc[:, self.output_items] = results['values']
-            # df[self.output_items] = results['values']
-            df[self.output_items] = [i[0] for i in results['values'] ]
-        else:
-            logging.error('error invoking external model')
-        logging.debug(df[self.output_items].dtype.name)
-        return df
-
-        # logging.debug("exiting after model invoked")
-        # return True
-        # df = pd.DataFrame(data=table_data) # TODO, shouldn't have to query table, df generally holds the
-        # num_rows = len(df)
-
-
-
-
-    @classmethod
-    def build_ui(cls):
-        #define arguments that behave as function inputs
-        inputs = []
-        inputs.append(ui.UIMultiItem(
-                    name = 'input_items',
-                    datatype=float,
-                    description = "Data items adjust",
-                    # output_item = 'output_item',
-                    is_output_datatype_derived = True)
-                )
-        # inputs.append(ui.UISingle(name='input_columns',
-        #                       datatype=str,
-        #                       description='Features to load from entity rows. Provide as list of comma seperated values like so - torque,speed,pressure',
-        #                       tags=['TEXT'],
-        #                       required=True
-        #                       ))
-
-        inputs.append(ui.UISingle(name='wml_endpoint',
-                              datatype=str,
-                              description='Endpoint to WML service where model is hosted',
-                              tags=['TEXT'],
-                              required=True
-                              ))
-        inputs.append(ui.UISingle(name='deployment_id',
-                              datatype=str,
-                              description='Deployment ID for WML model',
-                              tags=['TEXT'],
-                              required=True
-                              ))
-        inputs.append(ui.UISingle(name='apikey',
-                              datatype=str,
-                              description='IBM Cloud API Key',
-                              tags=['TEXT'],
-                              required=True
-                              ))
-        # define arguments that behave as function outputs
-        outputs=[]
-        outputs.append(ui.UISingle(name='output_items', datatype=float))
-        return (inputs, outputs)
-
-
-        outputs = []
-        return (inputs,outputs)
