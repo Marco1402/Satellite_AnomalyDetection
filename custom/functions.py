@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 # Specify the URL to your package here.
 # This URL must be accessible via pip install
-PACKAGE_URL = 'git+https://github.com/Marco1402/Satellite_AnomalyDetection'
+PACKAGE_URL = 'git+https://github.com/Marco1402/Satellite_AnomalyDetection@main'
 
 class TorquerAnomaly(BaseTransformer):
     
@@ -65,12 +65,14 @@ class TorquerAnomaly(BaseTransformer):
     
         results = self.invoke_model(self.wml_endpoint, self.deployment_id, self.apikey, self.input_items, input_values)
 
-        df[self.output_item] = ""
+        df[self.output_item] = np.nan
         for index, row in df.iterrows():
             if pd.isnull(row["anomalycheck"]):
                 df[self.output_item][index] = results["predictions"][0]["values"][0][0]
                 results["predictions"][0]["values"].pop(0)
                 df["anomalycheck"][index] = True
+        #df[self.output_item] = df[self.output_item].astype(np.int64)
+        #df.astype('int64')
 
         return df
 
@@ -106,5 +108,5 @@ class TorquerAnomaly(BaseTransformer):
                               ))
 
         outputs=[]
-        outputs.append(ui.UISingle(name='output_item', datatype=object))
+        outputs.append(ui.UISingle(name='output_item', datatype=float))
         return (inputs, outputs)
