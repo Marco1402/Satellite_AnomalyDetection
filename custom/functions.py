@@ -51,7 +51,7 @@ class TorquerAnomaly(BaseTransformer):
 
     def execute(self, df):
         df = df.copy()
-        
+
         input_values = []
         if "anomalycheck" not in df.columns:
             NaN = np.nan
@@ -106,5 +106,5 @@ class TorquerAnomaly(BaseTransformer):
                               ))
 
         outputs=[]
-        outputs.append(ui.UISingle(name='output_item', datatype=int))
+        outputs.append(ui.UISingle(name='output_item', datatype=object))
         return (inputs, outputs)
